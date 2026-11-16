@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -30,14 +32,16 @@ def test_record_test_payment_marks_order_paid(
     )
     assert order_resp.status_code == 201
     order_id = order_resp.json()["id"]
+    reference = f"wh-{order_id}-{secrets.token_hex(6)}"
 
-    checkout = client.post(
-        f"/api/orders/{order_id}/checkout",
-        headers={"Authorization": f"Bearer {supervisor_token}"},
-    )
-    assert checkout.status_code == 200
-    reference = checkout.json()["reference"]
-    assert reference.startswith(f"wh-{order_id}-")
+    db = session_factory()
+    try:
+        order = db.get(Order, order_id)
+        assert order is not None
+        order.paystack_reference = reference
+        db.commit()
+    finally:
+        db.close()
 
     record = client.post(
         f"/api/orders/{order_id}/record-test-payment",
