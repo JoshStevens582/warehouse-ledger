@@ -8,3 +8,6 @@ htmlcov/
 .coverage
 frontend/node_modules/
 frontend/dist/
+scripts/node_modules/
+scripts/package-lock.json
+scripts/package.json

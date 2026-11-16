@@ -1,11 +1,13 @@
-# Screenshots for README
+# README screenshots
 
-Add three PNGs here (1920×1080 or similar), then they render in the root **README.md**:
-
-| File | What to capture |
+| File | Content |
 | --- | --- |
-| `receiver-shelf.png` | Logged in as receiver — shelf table + a recent positive movement |
-| `supervisor-paid.png` | Supervisor — “Working on order #N”, status **paid**, green success message |
-| `pgadmin-orders.png` | pgAdmin — `orders` row with `status = paid` and `paystack_reference` filled |
+| `receiver-shelf.png` | Receiver — inventory table + activity |
+| `supervisor-paid.png` | Supervisor — paid order workflow |
+| `pgadmin-orders.png` | Order record panel (same fields as `orders` in Postgres) |
 
-Optional: `docs/DEMO.md` script while recording.
+```powershell
+# From repo root (API + Vite running on 5173)
+powershell -File scripts/prepare_readme_screenshots.ps1
+node scripts/capture-screenshots.mjs
+```

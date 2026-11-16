@@ -9,6 +9,21 @@ type Movement = {
   order_id: number | null;
   created_at: string;
 };
+type OrderDetail = {
+  id: number;
+  customer_email: string;
+  status: string;
+  currency: string;
+  total_amount: string;
+  paystack_reference: string | null;
+};
+
+function statusPillClass(status: string | null): string {
+  if (!status) return "status-pill status-pill--other";
+  if (status === "paid") return "status-pill status-pill--paid";
+  if (status === "pending_payment") return "status-pill status-pill--pending";
+  return "status-pill status-pill--other";
+}
 
 const API = "/api";
 
@@ -118,6 +133,7 @@ export default function App() {
     stock_movement_rows: number;
   } | null>(null);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
+  const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
   const [lookupOrderId, setLookupOrderId] = useState("");
 
   function logout() {
@@ -132,6 +148,8 @@ export default function App() {
     setProductId("");
     setActiveOrderId(null);
     setLookupOrderId("");
+    setOrderDetail(null);
+    setOrderStatus(null);
     persistActiveOrderId(null);
     setRecentMovements([]);
     setSuccessMessage("");
@@ -296,22 +314,30 @@ export default function App() {
     setError("");
     setOrderBusy(true);
     try {
-    const res = await fetch(`${API}/orders/${orderId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const body = (await res.json().catch(() => ({}))) as { detail?: string; status?: string };
-    if (!res.ok) {
-      const detail =
-        typeof body.detail === "string"
-          ? body.detail
-          : `Could not load order #${orderId} (${res.status}). Is the API running on port 8080?`;
-      setError(detail);
-      return;
-    }
-    const status = body.status ?? "unknown";
-    setOrderStatus(status);
-    setSuccessMessage(`Order #${orderId} status is ${status}.`);
-    return status;
+      const res = await fetch(`${API}/orders/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await res.json().catch(() => ({}))) as OrderDetail & { detail?: string };
+      if (!res.ok) {
+        const detail =
+          typeof body.detail === "string"
+            ? body.detail
+            : `Could not load order #${orderId} (${res.status}).`;
+        setError(detail);
+        setOrderDetail(null);
+        return;
+      }
+      const status = body.status ?? "unknown";
+      setOrderStatus(status);
+      setOrderDetail({
+        id: body.id ?? orderId,
+        customer_email: body.customer_email,
+        status,
+        currency: body.currency,
+        total_amount: String(body.total_amount),
+        paystack_reference: body.paystack_reference ?? null,
+      });
+      return status;
     } finally {
       setOrderBusy(false);
     }
@@ -426,18 +452,16 @@ export default function App() {
       }
       const saved = (await res.json()) as Movement;
       prependMovement(saved);
-      const table = "stock_movements";
-      const orderPart =
-        saved.order_id != null ? `, order_id=${saved.order_id}` : "";
+      const orderPart = saved.order_id != null;
       setSuccessMessage(
-        `Saved to Postgres table ${table}: movement id ${saved.id}, change ${saved.quantity_delta}${orderPart}. (This id is NOT “on shelf”.)`,
+        sign > 0
+          ? `Delivery recorded (+${saved.quantity_delta}). Shelf total updated.`
+          : `Pick recorded (${saved.quantity_delta})${orderPart ? ` for order #${saved.order_id}` : ""}.`,
       );
       if (sign < 0 && role === "picker") {
         const fulfilled = activeOrderId;
         setActiveOrderId(null);
-        setSuccessMessage(
-          `Pick saved (movement id ${saved.id}) for order #${fulfilled}. On shelf updated. Click “Create new order” for the next customer.`,
-        );
+        setSuccessMessage(`Order #${fulfilled} picked. Inventory updated.`);
       }
       await Promise.all([loadProducts(token), loadRecentMovements(token), loadDbInfo()]);
     } finally {
@@ -458,15 +482,17 @@ export default function App() {
     return (
       <div className="app">
         <header className="topbar topbar--login">
-          <span className="brand">Warehouse Ledger</span>
+          <span className="brand">
+            <span className="brand-mark">WL</span>
+            Warehouse Ledger
+          </span>
         </header>
         <main className="login-shell">
         <div className="login-wrap">
           <div className="login-card">
             <h1>Sign in</h1>
-            <p className="muted">
-              On shelf is the sum of every stock change in the database. Receivers add; pickers
-              remove.
+            <p className="login-tagline">
+              Inventory and order management with a live ledger-backed stock count.
             </p>
             <form onSubmit={onLogin} className="login-form">
               <label className="field">
@@ -492,18 +518,18 @@ export default function App() {
               </button>
             </form>
             {error && <p className="alert alert-error">{error}</p>}
-            <div className="demo-accounts">
-              <p className="demo-label">Demo accounts</p>
-              <div className="demo-grid">
+            <div className="eval-accounts">
+              <p className="eval-label">Evaluation accounts</p>
+              <div className="eval-grid">
                 {DEMO_ACCOUNTS.map((account) => (
                   <button
                     key={account.email}
                     type="button"
-                    className="demo-chip"
+                    className="eval-chip"
                     onClick={() => fillDemo(account)}
+                    title={account.hint}
                   >
-                    <strong>{account.role}</strong>
-                    <span>{account.hint}</span>
+                    {account.role}
                   </button>
                 ))}
               </div>
@@ -519,7 +545,10 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-left">
-          <span className="brand">Warehouse Ledger</span>
+          <span className="brand">
+            <span className="brand-mark">WL</span>
+            Warehouse Ledger
+          </span>
           {role && <span className={`role-badge role-${role}`}>{role}</span>}
         </div>
         <div className="topbar-right">
@@ -533,8 +562,8 @@ export default function App() {
       <main className="dashboard">
         <section className="panel">
           <div className="panel-head">
-            <h2>Shelf totals</h2>
-            <p className="muted">Live count from all stock movements</p>
+            <h2>Inventory</h2>
+            <p className="muted">On-hand quantity derived from the movement ledger</p>
           </div>
           {loading && products.length === 0 ? (
             <p className="muted">Loading…</p>
@@ -551,9 +580,7 @@ export default function App() {
                 <tbody>
                   {products.map((p) => (
                     <tr key={p.id}>
-                      <td>
-                        <code>{p.sku}</code>
-                      </td>
+                      <td className="sku-cell">{p.sku}</td>
                       <td>{p.name}</td>
                       <td
                         className={`num shelf-qty${p.shelf_quantity < 0 ? " shelf-qty--negative" : ""}`}
@@ -571,19 +598,12 @@ export default function App() {
           )}
         </section>
 
-        {role === "supervisor" && (
-          <section className="panel">
-            <p className="muted">
-              <strong>Supervisor:</strong> You do not move stock. Create order → Pay with Paystack → Record
-              test payment → Refresh status. Use receiver/picker for shelf changes.
-            </p>
-          </section>
-        )}
-
         {(role === "picker" || role === "supervisor") && (
-          <section className="panel panel-accent">
+          <div className={role === "supervisor" ? "dashboard-grid dashboard-grid--split" : undefined}>
+          <section className="panel">
             <div className="panel-head">
-              <h2>{role === "picker" ? "Step 1 — Customer order" : "Orders & Paystack"}</h2>
+              <h2>{role === "picker" ? "Customer order" : "Orders & checkout"}</h2>
+              <p className="muted">Create an order, collect payment, then confirm settlement</p>
             </div>
             <div className="movement-form">
               <label className="field field-inline">
@@ -623,31 +643,35 @@ export default function App() {
                 disabled={orderBusy || productId === "" || delta < 1}
                 onClick={() => createOrderForPick()}
               >
-                {orderBusy && payOrderId === null ? "Creating…" : payOrderId !== null ? "Create another order" : "1. Create order"}
+                {orderBusy && payOrderId === null
+                  ? "Creating…"
+                  : payOrderId !== null
+                    ? "New order"
+                    : "Create order"}
               </button>
             </div>
 
-            <div className="order-ready order-ready-steps">
-              <h3 className="steps-title">After you create an order</h3>
+            <div className="workflow-card">
+              <div className="workflow-head">
+                <h3>Payment workflow</h3>
+                {orderStatus ? (
+                  <span className={statusPillClass(orderStatus)}>{orderStatus.replaceAll("_", " ")}</span>
+                ) : null}
+              </div>
               {payOrderId !== null ? (
-                <p className="order-id-banner">
-                  Working on order <strong>#{payOrderId}</strong>
-                  {orderStatus ? (
-                    <>
-                      {" "}
-                      — status: <strong>{orderStatus}</strong>
-                    </>
-                  ) : null}
+                <p className="order-meta">
+                  Active order <strong>#{payOrderId}</strong>
                 </p>
               ) : (
-                <p className="muted">Click <strong>1. Create order</strong> first. Then these unlock.</p>
+                <p className="muted">Create an order to enable checkout and settlement.</p>
               )}
               <label className="field field-inline">
-                <span>{payOrderId !== null ? "Order #" : "Or type order #"}</span>
+                <span>Order ID</span>
                 <input
                   type="number"
                   min={1}
                   value={lookupOrderId}
+                  aria-label="Order ID"
                   onChange={(e) => {
                     const next = e.target.value;
                     setLookupOrderId(next);
@@ -672,7 +696,7 @@ export default function App() {
                   disabled={orderBusy || payOrderId === null}
                   onClick={() => payOrderId !== null && startPaystackCheckout(payOrderId)}
                 >
-                  {orderBusy ? "Opening Paystack…" : "2. Pay with Paystack"}
+                  {orderBusy ? "Opening…" : "Checkout (Paystack)"}
                 </button>
                 {role === "supervisor" && (
                   <button
@@ -681,7 +705,7 @@ export default function App() {
                     disabled={orderBusy || payOrderId === null}
                     onClick={() => payOrderId !== null && void recordTestPayment(payOrderId)}
                   >
-                    {orderBusy ? "Working…" : "3. Record test payment"}
+                    {orderBusy ? "Working…" : "Confirm settlement (test)"}
                   </button>
                 )}
                 <button
@@ -690,26 +714,54 @@ export default function App() {
                   disabled={orderBusy || payOrderId === null}
                   onClick={() => payOrderId !== null && void refreshOrderStatus(payOrderId)}
                 >
-                  {orderBusy ? "Refreshing…" : role === "supervisor" ? "4. Refresh status" : "Refresh status"}
+                  {orderBusy ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
-              {role === "supervisor" && payOrderId !== null && (
+              {role === "supervisor" && (
                 <p className="muted">
-                  Paystack opens in this tab for supervisors. After <strong>Success</strong>, click{" "}
-                  <strong>3</strong> then <strong>4</strong>. (Paystack cannot update localhost by
-                  itself.)
+                  Local development uses manual settlement after Paystack success (production uses webhooks).
                 </p>
               )}
               {successMessage && <p className="alert alert-success">{successMessage}</p>}
               {error && <p className="alert alert-error">{error}</p>}
             </div>
           </section>
+
+        {role === "supervisor" && orderDetail && (
+          <section className="panel panel-subtle">
+            <div className="panel-head">
+              <h2>Order record</h2>
+              <p className="muted">Mirrors the <code>orders</code> row in PostgreSQL</p>
+            </div>
+            <div className="order-record">
+              <p className="order-record-title">orders · id {orderDetail.id}</p>
+              <dl>
+                <dt>Status</dt>
+                <dd>
+                  <span className={statusPillClass(orderDetail.status)}>
+                    {orderDetail.status.replaceAll("_", " ")}
+                  </span>
+                </dd>
+                <dt>Customer</dt>
+                <dd>{orderDetail.customer_email}</dd>
+                <dt>Total</dt>
+                <dd>
+                  {orderDetail.currency} {orderDetail.total_amount}
+                </dd>
+                <dt>Paystack ref</dt>
+                <dd>{orderDetail.paystack_reference ?? "—"}</dd>
+              </dl>
+            </div>
+          </section>
+        )}
+          </div>
         )}
 
         {role !== "supervisor" && (
         <section className="panel">
           <div className="panel-head">
-            <h2>{role === "picker" ? "Step 2 — Record movement" : "Record movement"}</h2>
+            <h2>Stock movement</h2>
+            <p className="muted">Append a delivery or pick to the ledger</p>
           </div>
           <div className="movement-form">
             <label className="field field-inline">
@@ -744,7 +796,7 @@ export default function App() {
                 onClick={() => recordMovement(1)}
                 title={canDeliver ? "Add stock to shelf" : "Receiver role only"}
               >
-                Delivery (+)
+                Receive stock
               </button>
               <button
                 type="button"
@@ -759,7 +811,7 @@ export default function App() {
                     : "Picker role only"
                 }
               >
-                Pick (−)
+                Pick / ship
               </button>
             </div>
           </div>
@@ -771,10 +823,10 @@ export default function App() {
         <section className="panel">
           <div className="panel-head panel-head-row">
             <div>
-              <h2>Recent stock changes</h2>
+              <h2>Activity</h2>
               <p className="muted">
-                Same rows as table stock_movements in Postgres (not orders).
-                {dbInfo ? ` ${dbInfo.stock_movement_rows} rows in database.` : ""}
+                Recent ledger movements
+                {dbInfo ? ` · ${dbInfo.stock_movement_rows} total rows` : ""}
               </p>
             </div>
             <button
@@ -790,8 +842,8 @@ export default function App() {
             <table>
               <thead>
                 <tr>
-                  <th>Row #</th>
-                  <th>Change</th>
+                  <th>ID</th>
+                  <th>Qty Δ</th>
                   <th>Order</th>
                   <th>When</th>
                 </tr>
@@ -827,21 +879,9 @@ export default function App() {
           </div>
         </section>
 
-        <p className="muted dashboard-hint">
-          App URL: <code>{typeof window !== "undefined" ? window.location.origin : ""}</code> — use this
-          tab for supervisor Paystack (must match API callback port in{" "}
-          <code>.env</code> <code>CHECKOUT_CALLBACK_URL</code>).
-        </p>
-
         {dbInfo && (
-          <footer className="db-footer">
-            <strong>Where data lives:</strong> open this exact database in pgAdmin —{" "}
-            <code>
-              {dbInfo.database_host}:{dbInfo.database_port} / {dbInfo.database_name}
-            </code>
-            . Table <code>stock_movements</code> should have{" "}
-            <strong>{dbInfo.stock_movement_rows}</strong> rows (same count as “Recent stock changes”
-            above). Sort by <code>id</code>. Refresh the grid after each click.
+          <footer className="app-footer">
+            Connected to <kbd>{dbInfo.database_name}</kbd> @ {dbInfo.database_host}:{dbInfo.database_port}
           </footer>
         )}
       </main>

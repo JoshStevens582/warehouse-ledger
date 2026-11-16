@@ -10,13 +10,11 @@ Warehouses need a trustworthy shelf count. This app **never stores “on shelf�
 
 ## Screenshots
 
-After one run of [docs/DEMO.md](docs/DEMO.md), add PNGs to `docs/images/` (capture guide in [docs/images/README.md](docs/images/README.md)):
+| Inventory (receiver) | Orders & checkout (supervisor, paid) | Order record (`orders` row) |
+| --- | --- | --- |
+| ![Inventory dashboard](docs/images/receiver-shelf.png) | ![Supervisor checkout](docs/images/supervisor-paid.png) | ![Order record](docs/images/pgadmin-orders.png) |
 
-- `receiver-shelf.png` — shelf table + delivery
-- `supervisor-paid.png` — order status **paid** in the UI
-- `pgadmin-orders.png` — `orders.status = paid` in pgAdmin
-
-Then uncomment the image row in this README (search for `receiver-shelf.png`).
+Regenerate: `node scripts/capture-screenshots.mjs` (API + Vite on port 5173; run `scripts/prepare_readme_screenshots.ps1` first if needed).
 
 ## Stack
 
