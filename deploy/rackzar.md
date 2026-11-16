@@ -1,54 +1,65 @@
-# Optional VPS deploy (Rackzar)
+# Deploy on Rackzar (portfolio — not CCA)
 
-**Warehouse Ledger is a portfolio project** — not part of Custom Chat and Automation.  
-For job applications, the **GitHub repo + README** is enough. Deploy only if you want a public HTTPS demo (e.g. your own domain or a sslip.io name).
+**Live URL:** `https://ledger.102-203-81-249.sslip.io`  
+(sslip.io points at your VPS IP — no Custom Chat domain.)
 
-Atlas still owns **ports 80/443** on the VPS. Ledger runs on Docker network **cca-edge** like Counter, but you choose a **hostname that is not** `*.customchatandautomation.co.za` unless you explicitly want that.
+SSH to the VPS, then run the blocks below in order.
 
-## 1. Pick a hostname
-
-Examples:
-
-| Hostname | DNS |
-| --- | --- |
-| Your own domain (e.g. `ledger.yourname.dev`) | A → `102.203.81.249` |
-| sslip.io (quick test) | Often `https://102-203-81-249.sslip.io` — use a **dedicated** Caddy `SITE_ADDRESS` block you add yourself; do not mix with CCA product subdomains |
-
-Set Paystack **callback** and **webhook** to that HTTPS origin when you go live.
-
-## 2. Clone and `.env` on the server
+## 1. Ledger app
 
 ```bash
-docker network create cca-edge   # skip if it exists
-git clone https://github.com/JoshStevens582/warehouse-ledger.git /opt/ledger
-cd /opt/ledger
-cp .env.example .env
+docker network create cca-edge 2>/dev/null || true
+test -d /opt/ledger || git clone https://github.com/JoshStevens582/warehouse-ledger.git /opt/ledger
+cd /opt/ledger && git pull
 ```
 
-Edit `.env`:
+If `/opt/ledger/.env` does not exist yet:
 
-- `JWT_SECRET` — strong random string
-- Paystack test keys
-- `CHECKOUT_CALLBACK_URL=https://YOUR-HOSTNAME/` (trailing slash)
-- `CORS_ORIGINS=` empty (same-origin via Caddy)
+```bash
+cp .env.example .env
+nano .env
+```
 
-## 3. Start Ledger (no public ports on web)
+Set:
+
+- `JWT_SECRET` — long random string
+- `PAYSTACK_SECRET_KEY` / `PAYSTACK_PUBLIC_KEY`
+- `CHECKOUT_CALLBACK_URL=https://ledger.102-203-81-249.sslip.io/`
+- `CORS_ORIGINS=` (empty)
+
+Start:
 
 ```bash
 cd /opt/ledger
 docker compose -f docker-compose.yml -f deploy/compose.edge.yml up -d --build
+docker ps --filter name=ledger
 ```
 
-## 4. Caddy on the VPS
+## 2. Caddy (Atlas still owns :443)
 
-Append `deploy/caddy-edge.example.caddy` to **whatever Caddyfile already terminates HTTPS on that box** (usually Atlas `deploy/Caddyfile`), replacing `YOUR_HOSTNAME` with your chosen name. Rebuild that **web** container the same way you do for Counter/Clerk.
-
-**Do not** add a `ledger.customchatandautomation.co.za` block unless you intentionally brand it as a CCA product.
-
-## 5. Verify
+Append the file `deploy/caddy-ledger-portfolio.caddy` to `/opt/atlas/deploy/Caddyfile` (or paste its contents once at the end of that file).
 
 ```bash
-curl -fsS https://YOUR-HOSTNAME/api/health
+cd /opt/atlas
+git pull || true
+# If the ledger block is missing from Caddyfile, append it:
+grep -q 'ledger.102-203-81-249.sslip.io' deploy/Caddyfile || cat /opt/ledger/deploy/caddy-ledger-portfolio.caddy >> deploy/Caddyfile
+docker compose -f docker-compose.yml -f deploy/compose.counter-edge.yml up -d --build web
 ```
 
-Demo users: `receiver@example.com` / `receiver123`, `picker@example.com` / `picker123`, `supervisor@example.com` / `supervisor123`.
+## 3. Paystack (test keys)
+
+- Callback: `https://ledger.102-203-81-249.sslip.io/`
+- Webhook: `https://ledger.102-203-81-249.sslip.io/api/webhooks/paystack`
+
+## 4. Verify
+
+```bash
+curl -fsS https://ledger.102-203-81-249.sslip.io/api/health
+```
+
+Browser: `https://ledger.102-203-81-249.sslip.io` — `supervisor@example.com` / `supervisor123`
+
+## CV line (optional)
+
+Portfolio demo: `https://ledger.102-203-81-249.sslip.io` — GitHub: `github.com/JoshStevens582/warehouse-ledger`
