@@ -1,7 +1,7 @@
-# Append to /opt/atlas/deploy/Caddyfile, then redeploy Atlas web on cca-edge.
-# DNS: ledger.customchatandautomation.co.za A → 102.203.81.249
+# Paste into the VPS Caddyfile (e.g. /opt/atlas/deploy/Caddyfile).
+# Replace YOUR_HOSTNAME — not a Custom Chat and Automation product URL unless you choose that on purpose.
 
-ledger.customchatandautomation.co.za {
+YOUR_HOSTNAME {
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
