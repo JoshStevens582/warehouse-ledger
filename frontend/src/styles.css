@@ -515,6 +515,23 @@ code {
   border-bottom: none;
 }
 
+.recent-orders-wrap {
+  margin: 0.75rem 0 1rem;
+}
+
+.recent-order-row {
+  cursor: pointer;
+}
+
+.recent-order-row:hover {
+  background: #f0fdfa;
+}
+
+.recent-order-row--active {
+  background: #ecfdf5;
+  cursor: pointer;
+}
+
 .alert {
   margin: 1rem 0 0;
   padding: 0.65rem 0.9rem;
@@ -585,6 +602,34 @@ code {
   border-color: var(--brand);
   background: var(--brand-soft);
   color: var(--brand-dark);
+}
+
+.sync-panel {
+  border-color: #99f6e4;
+  background: linear-gradient(180deg, #f8fffe 0%, #fff 100%);
+}
+
+.sync-panel-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sync-panel-body {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.sync-panel-list {
+  margin: 0 0 0.65rem 1.1rem;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.sync-panel-hint {
+  margin: 0;
+  font-size: 0.8rem;
 }
 
 .app-footer {

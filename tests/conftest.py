@@ -20,13 +20,15 @@ _DEV_DB_DEFAULT = "postgresql+psycopg://ledger:ledger@localhost:5432/warehouse_l
 
 
 def _pick_test_database_url() -> str:
+    """Never TRUNCATE warehouse_ledger unless explicitly opted in (play data lives there)."""
     order: list[str] = []
     if from_env := os.environ.get("TEST_DATABASE_URL"):
         order.append(from_env)
     order.append(_TEST_DB_DEFAULT)
-    if dev := os.environ.get("DATABASE_URL"):
-        order.append(dev)
-    order.append(_DEV_DB_DEFAULT)
+    if os.environ.get("WAREHOUSE_LEDGER_ALLOW_TEST_TRUNCATE_DEV") == "1":
+        if dev := os.environ.get("DATABASE_URL"):
+            order.append(dev)
+        order.append(_DEV_DB_DEFAULT)
     seen: set[str] = set()
     for url in order:
         if url in seen:
@@ -40,7 +42,8 @@ def _pick_test_database_url() -> str:
             continue
         return url
     pytest.skip(
-        "No Postgres database for tests (create warehouse_ledger_test or use warehouse_ledger)"
+        "Create database warehouse_ledger_test and run: uv run alembic upgrade head "
+        "(see .env.example). Tests must not wipe warehouse_ledger."
     )
 
 

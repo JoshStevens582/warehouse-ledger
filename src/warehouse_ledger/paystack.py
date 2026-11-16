@@ -47,7 +47,16 @@ async def initialize_transaction(
             },
             content=json.dumps(body),
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            message = "Paystack initialize failed"
+            try:
+                payload = exc.response.json()
+                message = str(payload.get("message", message))
+            except Exception:  # noqa: BLE001
+                pass
+            raise RuntimeError(message) from exc
         data = response.json()
         if not data.get("status"):
             raise RuntimeError(data.get("message", "Paystack initialize failed"))
@@ -55,3 +64,30 @@ async def initialize_transaction(
         if not isinstance(inner, dict):
             raise RuntimeError("Unexpected Paystack response")
         return inner
+
+
+async def verify_transaction(reference: str) -> dict[str, Any]:
+    settings = get_settings()
+    if not settings.paystack_secret_key:
+        raise RuntimeError("PAYSTACK_SECRET_KEY is not set")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            f"https://api.paystack.co/transaction/verify/{reference}",
+            headers={"Authorization": f"Bearer {settings.paystack_secret_key}"},
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            message = "Paystack verify failed"
+            try:
+                payload = exc.response.json()
+                message = str(payload.get("message", message))
+            except Exception:  # noqa: BLE001
+                pass
+            raise RuntimeError(message) from exc
+        raw = response.json()
+        if not isinstance(raw, dict):
+            raise RuntimeError("Unexpected Paystack verify response")
+        if not raw.get("status"):
+            raise RuntimeError(str(raw.get("message", "Paystack verify failed")))
+        return raw

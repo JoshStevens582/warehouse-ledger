@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from warehouse_ledger.config import get_settings
 from warehouse_ledger.db import SessionLocal, get_db
-from warehouse_ledger.models import StockMovement
+from warehouse_ledger.models import Order, StockMovement
 from warehouse_ledger.routers import auth, movements, orders, products, webhooks
 from warehouse_ledger.seed import seed_demo_data
 
@@ -55,10 +55,12 @@ def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, str | int]:
     raw = get_settings().database_url.replace("postgresql+psycopg", "postgresql")
     parsed = urlparse(raw)
     movement_rows = db.scalar(select(func.count()).select_from(StockMovement)) or 0
+    order_rows = db.scalar(select(func.count()).select_from(Order)) or 0
     return {
         "status": "ok",
         "database_host": parsed.hostname or "",
         "database_port": parsed.port or 5432,
         "database_name": (parsed.path or "").lstrip("/"),
         "stock_movement_rows": movement_rows,
+        "order_rows": order_rows,
     }

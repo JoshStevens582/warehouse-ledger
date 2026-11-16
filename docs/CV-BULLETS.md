@@ -11,7 +11,7 @@ Paste 2–4 of these under Projects. Link the **GitHub repo** in the header line
 
 - Implemented **JWT authentication** and **role-based access** (receiver / picker / supervisor), including business rules such as blocking picks when stock is insufficient.
 
-- Integrated **Paystack** (transaction initialize + **HMAC-SHA512** webhook verification), **idempotent** payment rows, and a dev-only endpoint to simulate webhooks on localhost.
+- Integrated **Paystack** (checkout initialize, **verify** API for localhost, **HMAC-SHA512** webhooks), **idempotent** payment rows, and supervisor-only checkout.
 
 - Wrote **pytest** tests with branch coverage for webhooks, payments, and role boundaries; enforced quality with **Ruff**, **Mypy**, and **GitHub Actions** CI (Postgres + Redis services).
 

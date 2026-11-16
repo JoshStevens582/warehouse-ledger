@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -18,7 +18,7 @@ from warehouse_ledger.models import (
     User,
     UserRole,
 )
-from warehouse_ledger.paystack import initialize_transaction
+from warehouse_ledger.paystack import initialize_transaction, verify_transaction
 from warehouse_ledger.schemas import CheckoutResponse, OrderCreate, OrderRead, PaymentRead
 from warehouse_ledger.services.orders import create_order
 from warehouse_ledger.services.paystack_events import apply_charge_success, new_event_id
@@ -39,6 +39,18 @@ def post_order(
     return OrderRead.model_validate(order)
 
 
+@router.get("", response_model=list[OrderRead])
+def list_orders(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.supervisor, UserRole.picker))],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[OrderRead]:
+    rows = db.scalars(
+        select(Order).options(selectinload(Order.lines)).order_by(Order.id.desc()).limit(limit)
+    )
+    return [OrderRead.model_validate(o) for o in rows]
+
+
 @router.get("/{order_id}", response_model=OrderRead)
 def get_order(
     order_id: int,
@@ -55,14 +67,14 @@ def get_order(
 async def start_checkout(
     order_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_roles(UserRole.supervisor))],
 ) -> CheckoutResponse:
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.status not in {OrderStatus.draft, OrderStatus.pending_payment}:
         raise HTTPException(status_code=400, detail="Order is not open for payment")
-    reference = order.paystack_reference or f"wh-{order_id}-{secrets.token_hex(6)}"
+    reference = f"wh-{order_id}-{secrets.token_hex(6)}"
     order.paystack_reference = reference
     order.status = OrderStatus.pending_payment
     db.commit()
@@ -80,6 +92,53 @@ async def start_checkout(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return CheckoutResponse(authorization_url=data["authorization_url"], reference=reference)
+
+
+@router.post("/{order_id}/sync-payment")
+async def sync_payment(
+    order_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.supervisor))],
+) -> dict[str, str]:
+    """After Paystack Success: ask Paystack if payment succeeded, then mark order paid."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if not order.paystack_reference:
+        raise HTTPException(
+            status_code=400,
+            detail="Run Checkout (Paystack) first so this order has a reference",
+        )
+    try:
+        payload = await verify_transaction(order.paystack_reference)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    inner = payload.get("data")
+    if not isinstance(inner, dict):
+        raise HTTPException(status_code=502, detail="Unexpected Paystack verify response")
+    if inner.get("status") != "success":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Paystack has not recorded success yet (status={inner.get('status')})",
+        )
+    amount_minor = int(inner.get("amount", int(order.total_amount * 100)))
+    currency = str(inner.get("currency") or order.currency)
+    event_id = new_event_id()
+    db.add(
+        PaystackWebhookEvent(
+            event_id=event_id,
+            event_type="charge.success",
+            reference=order.paystack_reference,
+        )
+    )
+    db.commit()
+    status = apply_charge_success(
+        db,
+        reference=order.paystack_reference,
+        amount_minor=amount_minor,
+        currency=currency,
+    )
+    return {"status": status}
 
 
 @router.post("/{order_id}/record-test-payment")

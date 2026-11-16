@@ -18,13 +18,13 @@ Use this in interviews or when recording a Loom. Open **pgAdmin** on `warehouse_
 2. **Supervisor** — `supervisor@example.com` / `supervisor123`  
    - **1. Create order** (pick product + qty).  
    - Show new row in **`orders`**: `pending_payment`.  
-   - **2. Pay with Paystack** → test card `4084084084084081`, CVV `408`, PIN `1234`, **Success**.  
-   - Say: *“Paystack cannot hit localhost; in dev we record payment locally.”*  
-   - **3. Record test payment** → **4. Refresh status** → `paid` in UI.  
+   - **Checkout (Paystack)** opens a new tab → test card `4084084084084081`, CVV `408`, PIN `1234`, **Success**.  
+   - Say: *“Webhooks do not reach localhost; we verify with Paystack’s API instead.”*  
+   - **Confirm payment** (or auto on return URL) → **Refresh status** → `paid` in UI.  
    - Refresh pgAdmin **`orders`**: same `id`, **`status` = `paid`**, row in **`payments`**.
 
 3. **Picker** — `picker@example.com` / `picker123`  
-   - Create order or enter order # from step 2.  
+   - Create order or **Load** order # from step 2 (no checkout UI — supervisor already paid).  
    - **Pick (−)** for that order.  
    - Show **`stock_movements`** with negative `quantity_delta` and `order_id` set.
 

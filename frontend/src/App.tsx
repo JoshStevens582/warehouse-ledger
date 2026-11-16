@@ -131,10 +131,14 @@ export default function App() {
     database_port: number;
     database_name: string;
     stock_movement_rows: number;
+    order_rows: number;
   } | null>(null);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
   const [lookupOrderId, setLookupOrderId] = useState("");
+  const [recentOrders, setRecentOrders] = useState<
+    { id: number; status: string; total_amount: string }[]
+  >([]);
 
   function logout() {
     localStorage.removeItem(STORAGE_TOKEN);
@@ -173,6 +177,7 @@ export default function App() {
       database_port: number;
       database_name: string;
       stock_movement_rows: number;
+      order_rows: number;
     };
     setDbInfo(data);
   }
@@ -193,6 +198,18 @@ export default function App() {
     setRecentLoadProblem("");
     const data = (await res.json()) as Movement[];
     setRecentMovements(data);
+  }
+
+  async function loadRecentOrders(bearer: string) {
+    const res = await fetch(`${API}/orders?limit=15`, {
+      headers: { Authorization: `Bearer ${bearer}` },
+    });
+    if (!res.ok) {
+      setRecentOrders([]);
+      return;
+    }
+    const data = (await res.json()) as { id: number; status: string; total_amount: string }[];
+    setRecentOrders(data);
   }
 
   async function loadProducts(bearer: string) {
@@ -225,7 +242,10 @@ export default function App() {
       .finally(() => setLoading(false));
     void loadRecentMovements(token);
     void loadDbInfo();
-  }, [token]);
+    if (role === "picker" || role === "supervisor") {
+      void loadRecentOrders(token);
+    }
+  }, [token, role]);
 
   useEffect(() => {
     if (!token) return;
@@ -233,17 +253,25 @@ export default function App() {
     if (fromPaystack !== null) {
       adoptWorkingOrder(
         fromPaystack,
-        `Returned from Paystack for order #${fromPaystack}. Click 3. Record test payment, then 4. Refresh status.`,
+        `Returned from Paystack for order #${fromPaystack}. Confirming payment with Paystack…`,
       );
+      void confirmPayment(fromPaystack);
       const clean = window.location.pathname === "/" ? "/" : "/";
       window.history.replaceState({}, "", clean);
       return;
     }
     const stored = readPersistedOrderId();
     if (stored !== null && activeOrderId === null) {
-      setActiveOrderId(stored);
       setLookupOrderId(String(stored));
-      void refreshOrderStatus(stored);
+      void (async () => {
+        const ok = await refreshOrderStatus(stored, { quietMissing: true });
+        if (ok) {
+          setActiveOrderId(stored);
+        } else {
+          setLookupOrderId("");
+          persistActiveOrderId(null);
+        }
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per sign-in / Paystack return
   }, [token]);
@@ -282,36 +310,42 @@ export default function App() {
     setError("");
   }
 
-  async function recordTestPayment(orderId: number) {
+  async function confirmPayment(orderId: number) {
     if (!token) return;
     setError("");
     setSuccessMessage("");
     setOrderBusy(true);
     try {
-      const res = await fetch(`${API}/orders/${orderId}/record-test-payment`, {
+      const res = await fetch(`${API}/orders/${orderId}/sync-payment`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
       const body = (await res.json().catch(() => ({}))) as { detail?: string; status?: string };
       if (!res.ok) {
-        const detail = body.detail ?? "Could not record payment";
+        const detail = body.detail ?? "Could not confirm payment";
         setError(
           detail.includes("reference")
-            ? `${detail} — click 2. Pay with Paystack first, complete Success, then try again.`
+            ? `${detail} Use Checkout (Paystack) on this order first, complete Success, then Confirm payment.`
             : detail,
         );
         return;
       }
-      setSuccessMessage(`Payment recorded for order #${orderId} (${body.status ?? "ok"}).`);
+      setSuccessMessage(`Payment confirmed for order #${orderId} (${body.status ?? "ok"}).`);
       await refreshOrderStatus(orderId);
+      await loadRecentOrders(token);
     } finally {
       setOrderBusy(false);
     }
   }
 
-  async function refreshOrderStatus(orderId: number) {
-    if (!token) return;
-    setError("");
+  async function refreshOrderStatus(
+    orderId: number,
+    options?: { quietMissing?: boolean },
+  ): Promise<boolean> {
+    if (!token) return false;
+    if (!options?.quietMissing) {
+      setError("");
+    }
     setOrderBusy(true);
     try {
       const res = await fetch(`${API}/orders/${orderId}`, {
@@ -319,13 +353,29 @@ export default function App() {
       });
       const body = (await res.json().catch(() => ({}))) as OrderDetail & { detail?: string };
       if (!res.ok) {
+        if (res.status === 404) {
+          setActiveOrderId(null);
+          setOrderDetail(null);
+          setOrderStatus(null);
+          persistActiveOrderId(null);
+          if (!options?.quietMissing) {
+            const ids = recentOrders.map((o) => o.id).join(", ");
+            setError(
+              ids
+                ? `No order #${orderId} in the database. Existing orders: ${ids}. Use Create order for a new id (do not type the next number).`
+                : `No order #${orderId}. Use Create order — Postgres assigns the id.`,
+            );
+            void loadRecentOrders(token);
+          }
+          return false;
+        }
         const detail =
           typeof body.detail === "string"
             ? body.detail
             : `Could not load order #${orderId} (${res.status}).`;
         setError(detail);
         setOrderDetail(null);
-        return;
+        return false;
       }
       const status = body.status ?? "unknown";
       setOrderStatus(status);
@@ -337,15 +387,42 @@ export default function App() {
         total_amount: String(body.total_amount),
         paystack_reference: body.paystack_reference ?? null,
       });
-      return status;
+      return true;
     } finally {
       setOrderBusy(false);
     }
   }
 
+  async function openExistingOrder(orderId: number) {
+    setActiveOrderId(orderId);
+    setLookupOrderId(String(orderId));
+    persistActiveOrderId(orderId);
+    await refreshOrderStatus(orderId);
+  }
+
+  async function loadOrderFromField() {
+    const parsed = Number(lookupOrderId);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setError("Enter an order id from the list, or click Create order.");
+      return;
+    }
+    await openExistingOrder(parsed);
+  }
+
+  function handleCheckoutClick() {
+    if (payOrderId === null) {
+      setError(
+        "No order selected. Click order #2 in the table above, or enter 2 and click Load, then try Checkout again.",
+      );
+      return;
+    }
+    void startPaystackCheckout(payOrderId);
+  }
+
   async function startPaystackCheckout(orderId: number) {
     if (!token) return;
     setError("");
+    setSuccessMessage("Opening Paystack…");
     setOrderBusy(true);
     try {
       const res = await fetch(`${API}/orders/${orderId}/checkout`, {
@@ -354,23 +431,29 @@ export default function App() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        setSuccessMessage("");
         setError(body.detail ?? "Checkout failed — is PAYSTACK_SECRET_KEY in .env? Restart API after editing.");
         return;
       }
       const data = (await res.json()) as { authorization_url: string; reference: string };
       persistActiveOrderId(orderId);
-      if (role === "supervisor") {
+      const paystackTab = window.open(data.authorization_url, "_blank", "noopener,noreferrer");
+      if (!paystackTab) {
         setSuccessMessage(
-          `Going to Paystack for order #${orderId}. After Success you return here — then 3. Record test payment.`,
+          `Popup blocked. Taking you to Paystack for order #${orderId} in this tab…`,
         );
         window.location.assign(data.authorization_url);
         return;
       }
-      window.open(data.authorization_url, "_blank", "noopener,noreferrer");
       setSuccessMessage(
-        `Paystack opened in another tab for order #${orderId}. Stay on this page — after Success click 3. Record test payment.`,
+        `Paystack opened in a new tab for order #${orderId}. Pay there, then come back and click Confirm payment.`,
       );
       await refreshOrderStatus(orderId);
+    } catch {
+      setSuccessMessage("");
+      setError(
+        "Could not reach the API. Is it running on port 8080? Is this page served from Vite (e.g. localhost:5173)?",
+      );
     } finally {
       setOrderBusy(false);
     }
@@ -406,6 +489,7 @@ export default function App() {
       const data = (await res.json()) as { id: number };
       adoptWorkingOrder(data.id);
       setOrderStatus("pending_payment");
+      void loadRecentOrders(token);
       setSuccessMessage(
         role === "picker"
           ? `Created order #${data.id}. Pick (−) or Pay with Paystack below.`
@@ -472,11 +556,7 @@ export default function App() {
   const canDeliver = role === "receiver";
   const canPick = role === "picker";
 
-  const payOrderId =
-    activeOrderId ??
-    (lookupOrderId.trim() !== "" && !Number.isNaN(Number(lookupOrderId))
-      ? Number(lookupOrderId)
-      : null);
+  const payOrderId = activeOrderId;
 
   if (!token) {
     return (
@@ -560,6 +640,33 @@ export default function App() {
       </header>
 
       <main className="dashboard">
+        {dbInfo && (
+          <section className="panel panel-subtle sync-panel">
+            <h2 className="sync-panel-title">PostgreSQL source of truth</h2>
+            <p className="sync-panel-body">
+              This UI reads <strong>{dbInfo.database_name}</strong> on{" "}
+              <strong>
+                {dbInfo.database_host}:{dbInfo.database_port}
+              </strong>
+              . In pgAdmin, connect to that exact database and refresh the grid.
+            </p>
+            <ul className="sync-panel-list">
+              <li>
+                <strong>{dbInfo.order_rows}</strong> rows in <code>orders</code> (checkout list should
+                match)
+              </li>
+              <li>
+                <strong>{dbInfo.stock_movement_rows}</strong> rows in <code>stock_movements</code>{" "}
+                (Activity + shelf totals — not the same as orders)
+              </li>
+            </ul>
+            <p className="muted sync-panel-hint">
+              Running <code>pytest</code> without <code>warehouse_ledger_test</code> used to wipe this
+              database; that is now blocked. If counts still differ, you are usually in the wrong DB in
+              pgAdmin or an old grid tab.
+            </p>
+          </section>
+        )}
         <section className="panel">
           <div className="panel-head">
             <h2>Inventory</h2>
@@ -598,12 +705,138 @@ export default function App() {
           )}
         </section>
 
-        {(role === "picker" || role === "supervisor") && (
-          <div className={role === "supervisor" ? "dashboard-grid dashboard-grid--split" : undefined}>
+        {role === "picker" && (
           <section className="panel">
             <div className="panel-head">
-              <h2>{role === "picker" ? "Customer order" : "Orders & checkout"}</h2>
-              <p className="muted">Create an order, collect payment, then confirm settlement</p>
+              <h2>Customer order</h2>
+              <p className="muted">
+                Create or select an order, then pick stock below. Payment is handled by a supervisor.
+              </p>
+            </div>
+            <div className="movement-form">
+              <label className="field field-inline">
+                <span>Product</span>
+                <select
+                  value={productId}
+                  onChange={(e) => setProductId(Number(e.target.value))}
+                  aria-label="Product for order"
+                >
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.sku}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field field-inline">
+                <span>Qty</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={delta}
+                  onChange={(e) => setDelta(Number(e.target.value))}
+                />
+              </label>
+              <label className="field field-inline">
+                <span>Customer email</span>
+                <input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={orderBusy || productId === "" || delta < 1}
+                onClick={() => createOrderForPick()}
+              >
+                {orderBusy && payOrderId === null
+                  ? "Creating…"
+                  : payOrderId !== null
+                    ? "New order"
+                    : "Create order"}
+              </button>
+            </div>
+            <div className="workflow-card">
+              {payOrderId !== null ? (
+                <p className="order-meta">
+                  Picking for order <strong>#{payOrderId}</strong>
+                  {orderStatus ? (
+                    <>
+                      {" "}
+                      — <span className={statusPillClass(orderStatus)}>{orderStatus.replaceAll("_", " ")}</span>
+                    </>
+                  ) : null}
+                </p>
+              ) : (
+                <p className="muted">Create an order or select one from the list to enable Pick / ship.</p>
+              )}
+              {recentOrders.length > 0 && (
+                <div className="table-wrap recent-orders-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Order</th>
+                        <th>Status</th>
+                        <th className="num">Total (ZAR)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentOrders.map((o) => (
+                        <tr
+                          key={o.id}
+                          className={payOrderId === o.id ? "recent-order-row--active" : "recent-order-row"}
+                          onClick={() => void openExistingOrder(o.id)}
+                        >
+                          <td>#{o.id}</td>
+                          <td>
+                            <span className={statusPillClass(o.status)}>{o.status.replaceAll("_", " ")}</span>
+                          </td>
+                          <td className="num">{o.total_amount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="movement-form" style={{ marginTop: "0.75rem" }}>
+                <label className="field field-inline">
+                  <span>Order ID</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={lookupOrderId}
+                    aria-label="Order ID"
+                    onChange={(e) => setLookupOrderId(e.target.value)}
+                    placeholder="From table"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ color: "var(--text)", border: "1px solid var(--border)" }}
+                  disabled={orderBusy || lookupOrderId.trim() === ""}
+                  onClick={() => void loadOrderFromField()}
+                >
+                  Load
+                </button>
+              </div>
+              {successMessage && <p className="alert alert-success">{successMessage}</p>}
+              {error && <p className="alert alert-error">{error}</p>}
+            </div>
+          </section>
+        )}
+
+        {role === "supervisor" && (
+          <div className="dashboard-grid dashboard-grid--split">
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Orders & checkout</h2>
+              <p className="muted">
+                <strong>Create order</strong> adds a new row and Postgres picks the id. Then checkout and confirm
+                payment.
+              </p>
             </div>
             <div className="movement-form">
               <label className="field field-inline">
@@ -653,7 +886,7 @@ export default function App() {
 
             <div className="workflow-card">
               <div className="workflow-head">
-                <h3>Payment workflow</h3>
+                <h3>Payment</h3>
                 {orderStatus ? (
                   <span className={statusPillClass(orderStatus)}>{orderStatus.replaceAll("_", " ")}</span>
                 ) : null}
@@ -663,51 +896,77 @@ export default function App() {
                   Active order <strong>#{payOrderId}</strong>
                 </p>
               ) : (
-                <p className="muted">Create an order to enable checkout and settlement.</p>
+                <p className="muted">Create or load an order to enable checkout.</p>
               )}
-              <label className="field field-inline">
-                <span>Order ID</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={lookupOrderId}
-                  aria-label="Order ID"
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setLookupOrderId(next);
-                    if (next.trim() === "") {
-                      setActiveOrderId(null);
-                      persistActiveOrderId(null);
-                      return;
-                    }
-                    const parsed = Number(next);
-                    if (Number.isFinite(parsed) && parsed > 0) {
-                      setActiveOrderId(parsed);
-                      persistActiveOrderId(parsed);
-                    }
-                  }}
-                  placeholder="e.g. 5"
-                />
-              </label>
+              {recentOrders.length > 0 && (
+                <div className="table-wrap recent-orders-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Order</th>
+                        <th>Status</th>
+                        <th className="num">Order total (ZAR)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentOrders.map((o) => (
+                        <tr
+                          key={o.id}
+                          className={payOrderId === o.id ? "recent-order-row--active" : "recent-order-row"}
+                          onClick={() => void openExistingOrder(o.id)}
+                        >
+                          <td>#{o.id}</td>
+                          <td>
+                            <span className={statusPillClass(o.status)}>{o.status.replaceAll("_", " ")}</span>
+                          </td>
+                          <td className="num" title="orders.total_amount in Postgres">
+                            {o.total_amount}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="movement-form" style={{ marginTop: "0.75rem" }}>
+                <label className="field field-inline">
+                  <span>Open existing order</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={lookupOrderId}
+                    aria-label="Order ID"
+                    onChange={(e) => setLookupOrderId(e.target.value)}
+                    placeholder="From table above"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ color: "var(--text)", border: "1px solid var(--border)" }}
+                  disabled={orderBusy || lookupOrderId.trim() === ""}
+                  onClick={() => void loadOrderFromField()}
+                >
+                  Load
+                </button>
+              </div>
               <div className="movement-actions payment-steps">
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={orderBusy || payOrderId === null}
-                  onClick={() => payOrderId !== null && startPaystackCheckout(payOrderId)}
+                  disabled={orderBusy}
+                  onClick={handleCheckoutClick}
                 >
                   {orderBusy ? "Opening…" : "Checkout (Paystack)"}
                 </button>
-                {role === "supervisor" && (
-                  <button
-                    type="button"
-                    className="btn btn-success"
-                    disabled={orderBusy || payOrderId === null}
-                    onClick={() => payOrderId !== null && void recordTestPayment(payOrderId)}
-                  >
-                    {orderBusy ? "Working…" : "Confirm settlement (test)"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  disabled={orderBusy || payOrderId === null}
+                  onClick={() => payOrderId !== null && void confirmPayment(payOrderId)}
+                >
+                  {orderBusy ? "Working…" : "Confirm payment"}
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -717,21 +976,21 @@ export default function App() {
                   {orderBusy ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
-              {role === "supervisor" && (
-                <p className="muted">
-                  Local development uses manual settlement after Paystack success (production uses webhooks).
-                </p>
-              )}
+              <p className="muted">
+                After Paystack Success, click Confirm payment (checks Paystack, then sets status to paid).
+              </p>
               {successMessage && <p className="alert alert-success">{successMessage}</p>}
               {error && <p className="alert alert-error">{error}</p>}
             </div>
           </section>
 
-        {role === "supervisor" && orderDetail && (
+        {orderDetail && (
           <section className="panel panel-subtle">
             <div className="panel-head">
               <h2>Order record</h2>
-              <p className="muted">Mirrors the <code>orders</code> row in PostgreSQL</p>
+              <p className="muted">
+                Same row as pgAdmin table <code>orders</code> — not <code>order_lines.unit_price</code>
+              </p>
             </div>
             <div className="order-record">
               <p className="order-record-title">orders · id {orderDetail.id}</p>

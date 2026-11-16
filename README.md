@@ -62,7 +62,7 @@ Step-by-step script: **[docs/DEMO.md](docs/DEMO.md)** (~2 minutes).
 1. Movements are append-only; shelf total is a SQL sum.
 2. Roles enforce who can deliver vs pick vs manage orders.
 3. Order → Paystack reference → webhook verifies HMAC → one payment row; duplicate events ignored.
-4. Local dev uses **Record test payment** when Paystack cannot reach localhost.
+4. On localhost, Paystack cannot POST webhooks: after Success, supervisor uses **Confirm payment** (`POST /api/orders/{id}/sync-payment`, verifies with Paystack). Supervisor-only **Checkout** opens Paystack.
 
 ## Tests
 
@@ -77,6 +77,8 @@ CI runs the same on push (Postgres + Redis service containers). Prefer a dedicat
 ## CV copy-paste
 
 Ready-made bullets: **[docs/CV-BULLETS.md](docs/CV-BULLETS.md)**
+
+Public hosting (optional): **[docs/DEPLOY.md](docs/DEPLOY.md)**
 
 ## Project layout
 
