@@ -3,7 +3,7 @@
 Paste 2–4 of these under Projects. Link the **GitHub repo** in the header line.
 
 **Project line (title + link)**  
-`Warehouse Ledger` — [github.com/…/warehouse-ledger](https://github.com/) *(replace with your URL)*
+`Warehouse Ledger` — [github.com/JoshStevens582/warehouse-ledger](https://github.com/JoshStevens582/warehouse-ledger)
 
 **Bullets (pick what fits your CV length)**
 
