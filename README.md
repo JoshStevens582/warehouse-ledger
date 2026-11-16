@@ -4,6 +4,8 @@
 
 Full-stack warehouse demo: **append-only stock movements** in PostgreSQL, **JWT roles**, and **Paystack** checkout with signed webhooks. Built to show backend Python practices recruiters care about (tests, types, migrations, payment idempotency).
 
+**Live demo:** https://ledger.102-203-81-249.sslip.io (demo logins in README Quick start)
+
 ## Problem
 
 Warehouses need a trustworthy shelf count. This app **never stores “on shelf” as an editable number**. Every delivery and pick is one row in `stock_movements`; the API reports shelf quantity as **`SUM(quantity_delta)`**. Orders and payments live in their own tables so money and inventory stay auditable.
