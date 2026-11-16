@@ -27,17 +27,26 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Warehouse Ledger", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+def _cors_origins() -> list[str]:
+    raw = get_settings().cors_origins.strip()
+    if raw:
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    return [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
         "http://localhost:5175",
         "http://127.0.0.1:5175",
-    ],
+        "http://localhost:8092",
+        "http://127.0.0.1:8092",
+    ]
+
+
+app = FastAPI(title="Warehouse Ledger", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

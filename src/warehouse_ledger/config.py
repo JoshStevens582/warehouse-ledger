@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     paystack_secret_key: str = ""
     paystack_public_key: str = ""
     checkout_callback_url: str = "http://localhost:5173/"
+    cors_origins: str = ""
 
 
 @lru_cache

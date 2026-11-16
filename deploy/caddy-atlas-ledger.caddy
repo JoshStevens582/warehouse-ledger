@@ -1,0 +1,24 @@
+# Append to /opt/atlas/deploy/Caddyfile, then redeploy Atlas web on cca-edge.
+# DNS: ledger.customchatandautomation.co.za A → 102.203.81.249
+
+ledger.customchatandautomation.co.za {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy ledger-api:8790 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy ledger-web:80
+	}
+}

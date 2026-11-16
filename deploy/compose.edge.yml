@@ -1,0 +1,4 @@
+# Production on Rackzar: Atlas owns :443. Ledger joins cca-edge; web has no host ports.
+services:
+  web:
+    ports: []
