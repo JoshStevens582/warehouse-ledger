@@ -88,6 +88,16 @@ class CheckoutResponse(BaseModel):
     reference: str
 
 
+class ReceiptRead(BaseModel):
+    id: int
+    order_id: int
+    payment_id: int
+    body: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class PaymentRead(BaseModel):
     id: int
     order_id: int

@@ -3,16 +3,13 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any
 
-from arq import create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from warehouse_ledger.config import get_settings
 from warehouse_ledger.db import get_db
-from warehouse_ledger.models import Payment, PaystackWebhookEvent
+from warehouse_ledger.jobs import queue_receipt_for_reference
+from warehouse_ledger.models import PaystackWebhookEvent
 from warehouse_ledger.paystack import verify_webhook_signature
 from warehouse_ledger.services.paystack_events import apply_charge_success
 
@@ -49,6 +46,8 @@ async def paystack_webhook(
         db.flush()
     except IntegrityError:
         db.rollback()
+        if event_type == "charge.success" and reference:
+            await queue_receipt_for_reference(db, str(reference))
         return {"status": "duplicate"}
 
     if event_type != "charge.success" or not reference:
@@ -63,15 +62,5 @@ async def paystack_webhook(
         amount_minor=amount_minor,
         currency=currency,
     )
-    if pay_status == "ok":
-        try:
-            payment = db.scalar(
-                select(Payment).where(Payment.paystack_reference == reference)
-            )
-            if payment is not None:
-                redis = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
-                await redis.enqueue_job("send_payment_receipt", payment.id)
-                await redis.close()
-        except Exception:
-            pass
+    await queue_receipt_for_reference(db, str(reference))
     return {"status": pay_status}

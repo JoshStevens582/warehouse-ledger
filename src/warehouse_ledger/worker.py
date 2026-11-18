@@ -1,39 +1,30 @@
 from __future__ import annotations
 
-import logging
-from datetime import UTC, datetime
-
 from arq.connections import RedisSettings
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from warehouse_ledger.config import get_settings
 from warehouse_ledger.db import SessionLocal
-from warehouse_ledger.models import Payment
-
-logger = logging.getLogger(__name__)
+from warehouse_ledger.services.receipts import ReceiptNotReady, write_payment_receipt
 
 
-async def send_payment_receipt(ctx: dict[str, object], payment_id: int) -> None:
+async def send_payment_receipt(ctx: dict[str, object], payment_id: int) -> str:
+    """Write one receipt for a payment. ARQ retries when this raises."""
     del ctx
-    db: Session = SessionLocal()
+    db = SessionLocal()
     try:
-        payment = db.scalar(select(Payment).where(Payment.id == payment_id))
-        if payment is None or payment.receipt_sent_at is not None:
-            return
-        logger.info(
-            "Receipt queued for order %s ref %s amount %s %s",
-            payment.order_id,
-            payment.paystack_reference,
-            payment.amount,
-            payment.currency,
-        )
-        payment.receipt_sent_at = datetime.now(UTC)
-        db.commit()
+        outcome = write_payment_receipt(db, payment_id)
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
+    if outcome == "missing":
+        raise ReceiptNotReady(payment_id)
+    return outcome
 
 
 class WorkerSettings:
     functions = [send_payment_receipt]
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    max_tries = 3
+    job_timeout = 30

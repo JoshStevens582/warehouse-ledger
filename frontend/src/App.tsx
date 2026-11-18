@@ -135,6 +135,7 @@ export default function App() {
   } | null>(null);
   const [orderStatus, setOrderStatus] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
+  const [receiptBody, setReceiptBody] = useState<string | null>(null);
   const [lookupOrderId, setLookupOrderId] = useState("");
   const [recentOrders, setRecentOrders] = useState<
     { id: number; status: string; total_amount: string }[]
@@ -154,6 +155,7 @@ export default function App() {
     setLookupOrderId("");
     setOrderDetail(null);
     setOrderStatus(null);
+    setReceiptBody(null);
     persistActiveOrderId(null);
     setRecentMovements([]);
     setSuccessMessage("");
@@ -357,6 +359,7 @@ export default function App() {
           setActiveOrderId(null);
           setOrderDetail(null);
           setOrderStatus(null);
+          setReceiptBody(null);
           persistActiveOrderId(null);
           if (!options?.quietMissing) {
             const ids = recentOrders.map((o) => o.id).join(", ");
@@ -375,6 +378,7 @@ export default function App() {
             : `Could not load order #${orderId} (${res.status}).`;
         setError(detail);
         setOrderDetail(null);
+        setReceiptBody(null);
         return false;
       }
       const status = body.status ?? "unknown";
@@ -387,10 +391,31 @@ export default function App() {
         total_amount: String(body.total_amount),
         paystack_reference: body.paystack_reference ?? null,
       });
+      await loadReceipt(orderId, token, status);
       return true;
     } finally {
       setOrderBusy(false);
     }
+  }
+
+  async function loadReceipt(orderId: number, authToken: string, status: string) {
+    if (status !== "paid") {
+      setReceiptBody(null);
+      return;
+    }
+    const res = await fetch(`${API}/orders/${orderId}/receipt`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (res.status === 404) {
+      setReceiptBody("Queued. The worker writes one receipt. Click Refresh.");
+      return;
+    }
+    if (!res.ok) {
+      setReceiptBody(null);
+      return;
+    }
+    const data = (await res.json()) as { body?: string };
+    setReceiptBody(data.body ?? null);
   }
 
   async function openExistingOrder(orderId: number) {
@@ -1009,6 +1034,14 @@ export default function App() {
                 </dd>
                 <dt>Paystack ref</dt>
                 <dd>{orderDetail.paystack_reference ?? "—"}</dd>
+                {receiptBody && (
+                  <>
+                    <dt>Receipt</dt>
+                    <dd>
+                      <pre className="receipt-body">{receiptBody}</pre>
+                    </dd>
+                  </>
+                )}
               </dl>
             </div>
           </section>

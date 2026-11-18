@@ -65,7 +65,7 @@ def reset_warehouse_tables(session_factory: sessionmaker[Session]) -> None:
         db.execute(text("SET lock_timeout = '5s'"))
         db.execute(
             text(
-                "TRUNCATE stock_movements, order_lines, payments, "
+                "TRUNCATE receipts, stock_movements, order_lines, payments, "
                 "paystack_webhook_events, orders, products, users "
                 "RESTART IDENTITY CASCADE"
             )

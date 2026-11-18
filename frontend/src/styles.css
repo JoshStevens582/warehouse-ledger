@@ -639,6 +639,12 @@ code {
   padding: 0.5rem 1rem 1.5rem;
 }
 
+.receipt-body {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
 .app-footer kbd {
   font-family: inherit;
   padding: 0.1rem 0.35rem;

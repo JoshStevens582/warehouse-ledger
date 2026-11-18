@@ -24,7 +24,7 @@ Regenerate: `node scripts/capture-screenshots.mjs` (API + Vite on port 5173; run
 - **DB:** PostgreSQL (ledger + orders + payments)
 - **Auth:** JWT, roles `receiver` | `picker` | `supervisor`
 - **Payments:** Paystack initialize, HMAC webhooks, idempotent `payments` rows
-- **Async jobs:** ARQ + Redis (receipt delivery after payment)
+- **Async jobs:** ARQ + Redis. After payment the worker writes one receipt and retries up to 3 times. A second run does not write another receipt.
 - **UI:** React (Vite) — thin client over `/api`
 - **Quality:** pytest (branch coverage), Ruff, Mypy, GitHub Actions
 

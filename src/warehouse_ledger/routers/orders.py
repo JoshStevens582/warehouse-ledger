@@ -10,16 +10,24 @@ from sqlalchemy.orm import Session, selectinload
 from warehouse_ledger.auth import get_current_user, require_roles
 from warehouse_ledger.config import get_settings
 from warehouse_ledger.db import get_db
+from warehouse_ledger.jobs import queue_receipt_for_reference
 from warehouse_ledger.models import (
     Order,
     OrderStatus,
     Payment,
     PaystackWebhookEvent,
+    Receipt,
     User,
     UserRole,
 )
 from warehouse_ledger.paystack import initialize_transaction, verify_transaction
-from warehouse_ledger.schemas import CheckoutResponse, OrderCreate, OrderRead, PaymentRead
+from warehouse_ledger.schemas import (
+    CheckoutResponse,
+    OrderCreate,
+    OrderRead,
+    PaymentRead,
+    ReceiptRead,
+)
 from warehouse_ledger.services.orders import create_order
 from warehouse_ledger.services.paystack_events import apply_charge_success, new_event_id
 
@@ -138,11 +146,12 @@ async def sync_payment(
         amount_minor=amount_minor,
         currency=currency,
     )
+    await queue_receipt_for_reference(db, order.paystack_reference)
     return {"status": status}
 
 
 @router.post("/{order_id}/record-test-payment")
-def record_test_payment(
+async def record_test_payment(
     order_id: int,
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_roles(UserRole.supervisor))],
@@ -172,7 +181,22 @@ def record_test_payment(
         amount_minor=amount_minor,
         currency=order.currency,
     )
+    await queue_receipt_for_reference(db, order.paystack_reference)
     return {"status": status}
+
+
+@router.get("/{order_id}/receipt", response_model=ReceiptRead)
+def get_receipt(
+    order_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_roles(UserRole.supervisor))],
+) -> ReceiptRead:
+    receipt = db.scalar(
+        select(Receipt).where(Receipt.order_id == order_id).order_by(Receipt.id.desc())
+    )
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not written yet")
+    return ReceiptRead.model_validate(receipt)
 
 
 @router.get("/{order_id}/payments", response_model=list[PaymentRead])

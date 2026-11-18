@@ -117,6 +117,22 @@ class Payment(Base):
     receipt_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     order: Mapped[Order] = relationship(back_populates="payments")
+    receipt: Mapped[Receipt | None] = relationship(back_populates="payment")
+
+
+class Receipt(Base):
+    """One stored receipt per payment. The worker writes it; a retry does not add another."""
+
+    __tablename__ = "receipts"
+    __table_args__ = (UniqueConstraint("payment_id", name="uq_receipts_payment_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payments.id"))
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    body: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    payment: Mapped[Payment] = relationship(back_populates="receipt")
 
 
 class PaystackWebhookEvent(Base):

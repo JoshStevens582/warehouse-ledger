@@ -22,6 +22,7 @@ Use this in interviews or when recording a Loom. Open **pgAdmin** on `warehouse_
    - Say: *“Webhooks do not reach localhost; we verify with Paystack’s API instead.”*  
    - **Confirm payment** (or auto on return URL) → **Refresh status** → `paid` in UI.  
    - Refresh pgAdmin **`orders`**: same `id`, **`status` = `paid`**, row in **`payments`**.
+   - With the worker running, **Refresh** shows one receipt. A second run does not write another.
 
 3. **Picker** — `picker@example.com` / `picker123`  
    - Create order or **Load** order # from step 2 (no checkout UI — supervisor already paid).  
