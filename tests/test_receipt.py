@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -75,7 +76,7 @@ def _paid_order(
 
 
 @pytest.fixture()
-def paystack_secret(monkeypatch: pytest.MonkeyPatch) -> str:
+def paystack_secret(monkeypatch: pytest.MonkeyPatch) -> Generator[str, None, None]:
     secret = "sk_test_local_only"
     monkeypatch.setenv("PAYSTACK_SECRET_KEY", secret)
     get_settings.cache_clear()

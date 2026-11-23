@@ -74,7 +74,14 @@ uv run mypy src
 uv run pytest --cov=warehouse_ledger --cov-branch
 ```
 
-CI runs the same on push (Postgres + Redis service containers). Prefer a dedicated `warehouse_ledger_test` database so pytest does not wipe your play data — see `.env.example`.
+Browser (Playwright): picker must not reach Paystack checkout — API returns 403 and the UI hides supervisor checkout.
+
+```bash
+uv run alembic upgrade head
+cd e2e && npm ci && npx playwright install chromium && npm test
+```
+
+CI runs pytest and the Playwright job on push (Postgres + Redis service containers). Prefer a dedicated `warehouse_ledger_test` database so pytest does not wipe your play data — see `.env.example`.
 
 ## CV copy-paste
 
@@ -89,5 +96,6 @@ Public hosting (optional): **[docs/DEPLOY.md](docs/DEPLOY.md)**
 | `src/warehouse_ledger/` | API, models, Paystack, services |
 | `alembic/` | Migrations |
 | `tests/` | pytest (roles, webhooks, record-test-payment) |
+| `e2e/` | Playwright (picker blocked from checkout) |
 | `frontend/` | Vite React UI |
 | `scripts/` | Postgres init, Paystack webhook relay (local dev) |

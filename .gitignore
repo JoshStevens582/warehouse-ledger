@@ -8,6 +8,10 @@ htmlcov/
 .coverage
 frontend/node_modules/
 frontend/dist/
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
 scripts/node_modules/
 scripts/package-lock.json
 scripts/package.json
