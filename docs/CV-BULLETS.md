@@ -17,6 +17,8 @@ Paste 2–4 of these under Projects. Link the **GitHub repo** in the header line
 
 - Wrote **pytest** tests with branch coverage for webhooks, payments, and role boundaries; enforced quality with **Ruff**, **Mypy**, and **GitHub Actions** CI (Postgres + Redis services).
 
+- **Playwright** browser check: a picker can create an order but gets **403** on checkout and never sees supervisor-only Paystack controls.
+
 - Delivered a thin **React (Vite)** client for demos; API documented via **OpenAPI** (`/docs`).
 
 **Skills line (optional)**  
