@@ -15,7 +15,7 @@ Paste 2–4 of these under Projects. Link the **GitHub repo** in the header line
 
 - After payment, an **ARQ** job on **Redis** writes one receipt and retries up to 3 times. A second run does not write another receipt.
 
-- Wrote **pytest** tests with branch coverage for webhooks, payments, and role boundaries; enforced quality with **Ruff**, **Mypy**, and **GitHub Actions** CI (Postgres + Redis services).
+- Wrote **pytest** tests with branch coverage for webhooks, payments, and role boundaries; enforced quality with **Ruff**, **Mypy**, and **GitHub Actions** CI (Postgres + Redis services). **GitHub Actions** deploys the live demo to a VPS after CI (Docker Compose + HTTPS).
 
 - **Playwright** browser check: a picker can create an order but gets **403** on checkout and never sees supervisor-only Paystack controls.
 

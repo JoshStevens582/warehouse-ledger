@@ -5,6 +5,8 @@
 
 SSH to the VPS, then run the blocks below in order.
 
+After the first bootstrap, **GitHub Actions** on `main` runs `deploy/remote-update.sh` (git reset + compose rebuild). Do not edit tracked files on the VPS.
+
 ## 1. Ledger app
 
 ```bash

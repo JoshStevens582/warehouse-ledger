@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from warehouse_ledger.db import SessionLocal, get_db
 from warehouse_ledger.models import Order, StockMovement
 from warehouse_ledger.routers import auth, movements, orders, products, webhooks
 from warehouse_ledger.seed import seed_demo_data
+from warehouse_ledger.spa import frontend_dist_dir, spa_file
 
 
 @asynccontextmanager
@@ -73,3 +75,11 @@ def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, str | int]:
         "stock_movement_rows": movement_rows,
         "order_rows": order_rows,
     }
+
+
+@app.get("/{full_path:path}")
+def serve_frontend(full_path: str) -> FileResponse:
+    dist = frontend_dist_dir()
+    if dist is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(spa_file(full_path, dist))

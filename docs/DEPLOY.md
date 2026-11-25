@@ -1,6 +1,10 @@
 # Deploy (phase 2)
 
-Local demo + GitHub is enough for most interviews. Use this when you want a **public URL** and **real Paystack webhooks** (no `sync-payment` button).
+**Live demo:** https://ledger.102-203-81-249.sslip.io
+
+Pushes to `main` run pytest + Playwright, then GitHub Actions SSHs to the Rackzar VPS, resets `/opt/ledger` to `origin/main`, and rebuilds Docker Compose. Manual steps: [deploy/rackzar.md](../deploy/rackzar.md).
+
+Repo secrets (set once, never commit): `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
 
 ## What you need
 
